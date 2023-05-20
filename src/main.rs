@@ -5,9 +5,10 @@ use ash::extensions::ext::DebugUtils;
 use ash::vk::{
     self, make_version, ApplicationInfo, Bool32, DebugUtilsMessageSeverityFlagsEXT,
     DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT,
-    DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, InstanceCreateFlags,
-    InstanceCreateInfo,
+    DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceQueueCreateInfo,
+    InstanceCreateFlags, InstanceCreateInfo,
 };
+use ash::Device;
 use ash::Entry;
 use ash::Instance;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
@@ -53,6 +54,7 @@ struct App {
     entry: Entry,
     instance: Instance,
     data: AppData,
+    device: Device,
 }
 
 impl App {
@@ -64,16 +66,21 @@ impl App {
 
         pick_physical_device(&instance, &mut data);
 
+        let device = create_logical_device(&entry, &instance, &mut data);
+
         Self {
             entry,
             instance,
             data,
+            device,
         }
     }
 
     unsafe fn render(&mut self, window: &Window) {}
 
     unsafe fn destroy(&mut self) {
+        self.device.destroy_device(None);
+
         let debug_utils = DebugUtils::new(&self.entry, &self.instance);
         debug_utils.destroy_debug_utils_messenger(self.data.messenger, None);
 
@@ -209,6 +216,7 @@ extern "system" fn debug_callback(
 struct AppData {
     messenger: DebugUtilsMessengerEXT,
     physical_device: vk::PhysicalDevice,
+    graphics_queue: vk::Queue,
 }
 
 unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) {
@@ -290,4 +298,35 @@ fn read_cstr(buf: &[i8]) -> &CStr {
 
     let null = null.unwrap();
     CStr::from_bytes_with_nul(&buf[0..null + 1]).unwrap()
+}
+
+unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &mut AppData) -> Device {
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device).unwrap();
+
+    let queue_priorities = &[1.0];
+    let queue_info = DeviceQueueCreateInfo::builder()
+        .queue_family_index(indices.graphics)
+        .queue_priorities(queue_priorities)
+        .build();
+
+    let layers = vec![VALIDATION_LAYER.as_ptr()];
+
+    let extensions = vec![];
+
+    let features = vk::PhysicalDeviceFeatures::builder();
+
+    let queue_infos = [queue_info];
+    let info = vk::DeviceCreateInfo::builder()
+        .queue_create_infos(&queue_infos)
+        .enabled_layer_names(&layers)
+        .enabled_extension_names(&extensions)
+        .enabled_features(&features);
+
+    let device = instance
+        .create_device(data.physical_device, &info, None)
+        .unwrap();
+
+    data.graphics_queue = device.get_device_queue(indices.graphics, 0);
+
+    device
 }
