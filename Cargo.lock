@@ -295,6 +295,7 @@ name = "hello-vulkan"
 version = "0.1.0"
 dependencies = [
  "ash",
+ "bytemuck",
  "pretty_env_logger",
  "raw-window-handle",
  "tracing",

@@ -62,6 +62,8 @@ impl App {
         let entry = Entry::load().unwrap();
         let instance = create_instance(window, &entry, &mut data);
 
+        pick_physical_device(&instance, &mut data);
+
         Self {
             entry,
             instance,
@@ -206,4 +208,86 @@ extern "system" fn debug_callback(
 #[derive(Default)]
 struct AppData {
     messenger: DebugUtilsMessengerEXT,
+    physical_device: vk::PhysicalDevice,
+}
+
+unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) {
+    for physical_device in instance.enumerate_physical_devices().unwrap() {
+        let properties = instance.get_physical_device_properties(physical_device);
+
+        let name = read_cstr(&properties.device_name);
+
+        if !check_physical_device(instance, data, physical_device) {
+            tracing::warn!("physical device not suitable: {}", name.to_string_lossy());
+        } else {
+            tracing::info!("selected device: {}", name.to_string_lossy());
+
+            data.physical_device = physical_device;
+
+            return;
+        }
+    }
+
+    panic!("no device selected");
+}
+
+unsafe fn check_physical_device(
+    instance: &Instance,
+    data: &AppData,
+    physical_device: vk::PhysicalDevice,
+) -> bool {
+    let properties = instance.get_physical_device_properties(physical_device);
+    if properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU {
+        tracing::warn!("no DGPU");
+        return false;
+    }
+
+    let features = instance.get_physical_device_features(physical_device);
+    if features.geometry_shader != vk::TRUE {
+        tracing::warn!("no geometry shader");
+        return false;
+    }
+
+    if QueueFamilyIndices::get(instance, data, physical_device).is_none() {
+        tracing::warn!("missing queue families");
+        return false;
+    }
+
+    true
+}
+
+struct QueueFamilyIndices {
+    graphics: u32,
+}
+
+impl QueueFamilyIndices {
+    unsafe fn get(
+        instance: &Instance,
+        data: &AppData,
+        physical_device: vk::PhysicalDevice,
+    ) -> Option<Self> {
+        let properties = instance.get_physical_device_queue_family_properties(physical_device);
+
+        let graphics = properties
+            .iter()
+            .position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+            .map(|i| i as u32);
+
+        graphics.map(|graphics| Self { graphics })
+    }
+}
+
+fn read_cstr(buf: &[i8]) -> &CStr {
+    let buf = bytemuck::cast_slice(buf);
+
+    let mut null = None;
+    for (i, b) in buf.iter().enumerate() {
+        if *b == 0 {
+            null = Some(i);
+            break;
+        }
+    }
+
+    let null = null.unwrap();
+    CStr::from_bytes_with_nul(&buf[0..null + 1]).unwrap()
 }
