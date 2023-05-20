@@ -105,6 +105,7 @@ impl App {
 
         let device = create_logical_device(&entry, &instance, &mut data);
         create_swapchain(&entry, window, &instance, &device, &mut data);
+        create_swapchain_image_views(&device, &mut data);
 
         Self {
             entry,
@@ -117,6 +118,11 @@ impl App {
     unsafe fn render(&mut self, window: &Window) {}
 
     unsafe fn destroy(&mut self) {
+        self.data
+            .swapchain_image_view
+            .iter()
+            .for_each(|v| self.device.destroy_image_view(*v, None));
+
         ash::extensions::khr::Swapchain::new(&self.instance, &self.device)
             .destroy_swapchain(self.data.swapchain, None);
 
@@ -263,6 +269,10 @@ struct AppData {
     surface: SurfaceKHR,
     present_queue: vk::Queue,
     swapchain: vk::SwapchainKHR,
+    swapchain_images: Vec<vk::Image>,
+    swapchain_format: vk::Format,
+    swapchain_extent: vk::Extent2D,
+    swapchain_image_view: Vec<vk::ImageView>,
 }
 
 unsafe fn pick_physical_device(entry: &Entry, instance: &Instance, data: &mut AppData) {
@@ -562,4 +572,41 @@ unsafe fn create_swapchain(
     data.swapchain = ash::extensions::khr::Swapchain::new(instance, device)
         .create_swapchain(&info, None)
         .unwrap();
+
+    data.swapchain_images = ash::extensions::khr::Swapchain::new(&instance, device)
+        .get_swapchain_images(data.swapchain)
+        .unwrap();
+
+    data.swapchain_format = surface_format.format;
+    data.swapchain_extent = extent;
+}
+
+unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) {
+    let components = vk::ComponentMapping::builder()
+        .r(vk::ComponentSwizzle::IDENTITY)
+        .g(vk::ComponentSwizzle::IDENTITY)
+        .b(vk::ComponentSwizzle::IDENTITY)
+        .a(vk::ComponentSwizzle::IDENTITY);
+
+    let subresource_range = vk::ImageSubresourceRange::builder()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1);
+
+    data.swapchain_image_view = data
+        .swapchain_images
+        .iter()
+        .map(|i| {
+            let info = vk::ImageViewCreateInfo::builder()
+                .image(*i)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(data.swapchain_format)
+                .components(*components)
+                .subresource_range(*subresource_range);
+
+            device.create_image_view(&info, None).unwrap()
+        })
+        .collect::<Vec<_>>();
 }
