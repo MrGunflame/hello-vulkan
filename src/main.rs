@@ -45,6 +45,7 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
 
                 unsafe {
+                    app.device.device_wait_idle().unwrap();
                     app.destroy();
                 }
             }
@@ -163,6 +164,10 @@ impl App {
 
         ash::extensions::khr::Swapchain::new(&self.instance, &self.device)
             .queue_present(self.data.present_queue, &present_info)
+            .unwrap();
+
+        self.device
+            .queue_wait_idle(self.data.present_queue)
             .unwrap();
     }
 
