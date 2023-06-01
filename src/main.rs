@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::{c_char, c_void, CStr};
 
 use ash::extensions::ext::DebugUtils;
-use ash::extensions::khr::{Win32Surface, XcbSurface, XlibSurface};
+use ash::extensions::khr::{WaylandSurface, Win32Surface, XcbSurface, XlibSurface};
 use ash::vk::{
     self, make_version, ApplicationInfo, Bool32, DebugUtilsMessageSeverityFlagsEXT,
     DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT,
@@ -96,6 +96,16 @@ impl App {
 
                 Win32Surface::new(&entry, &instance)
                     .create_win32_surface(&info, None)
+                    .unwrap()
+            }
+            (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(window)) => {
+                let info = vk::WaylandSurfaceCreateInfoKHR::builder()
+                    .display(display.display)
+                    .surface(window.surface)
+                    .build();
+
+                WaylandSurface::new(&entry, &instance)
+                    .create_wayland_surface(&info, None)
                     .unwrap()
             }
             _ => todo!(),
